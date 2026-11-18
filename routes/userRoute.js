@@ -592,4 +592,14 @@ export class UserRoute {
             return res.status(statusCode).json(body);
         }
         if (res && typeof res.writeHead === 'function' && typeof res.end === 'function') {
-            res.writeHead(statusCode, {
+            res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify(body));
+            return body;
+        }
+
+        return body;
+    }
+}
+
+export const userRoute = new UserRoute();
+export default userRoute;

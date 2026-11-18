@@ -1,23 +1,25 @@
 import express from 'express';
-import userRoutes from './routes/userRoute.js';
+import userRoute, { USER_ROUTE_PATHS } from './routes/userRoute.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
+// Middlewares de parse e CORS
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-user-uid');
     if (req.method === 'OPTIONS') {
         return res.sendStatus(204);
     }
     next();
 });
 
+// Rota raiz (Status da API e catálogo de endpoints)
 app.get('/', (req, res) => {
     res.status(200).json({
         success: true,
@@ -27,12 +29,13 @@ app.get('/', (req, res) => {
         status: 'online',
         endpoints: {
             health: '/health',
-            users: '/users',
-            apiUsers: '/api/users'
+            routes: USER_ROUTE_PATHS,
+            registeredRoutes: userRoute.getRegisteredRoutes()
         }
     });
 });
 
+// Rota de Health Check (utilizada pelo Render)
 app.get('/health', (req, res) => {
     res.status(200).json({
         success: true,
@@ -42,9 +45,11 @@ app.get('/health', (req, res) => {
     });
 });
 
-app.use('/users', userRoutes);
-app.use('/api/users', userRoutes);
+// Registra as rotas de UserRoute na raiz (/auth/* e /users/*) e sob /api (/api/auth/* e /api/users/*)
+userRoute.registerRoutes(app);
+userRoute.registerRoutes(app, '/api');
 
+// Tratamento de rota não encontrada (404)
 app.use((req, res) => {
     res.status(404).json({
         success: false,
@@ -52,6 +57,7 @@ app.use((req, res) => {
     });
 });
 
+// Tratamento global de erros
 app.use((err, req, res, _next) => {
     console.error('[Server Error]', err);
     res.status(err.status || 500).json({

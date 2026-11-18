@@ -77,6 +77,15 @@ export class CreateUserRequestDTO {
     }
 
     /**
+     * @param {Object} reqOrData
+     * @param {string|null} [forcedRole=null]
+     * @returns {CreateUserRequestDTO}
+     */
+    static fromRequest(reqOrData, forcedRole = null) {
+        return new CreateUserRequestDTO(reqOrData, forcedRole).validate();
+    }
+
+    /**
      * @returns {CreateUserRequestDTO}
      */
     validate() {
@@ -141,6 +150,14 @@ export class LoginRequestDTO {
     }
 
     /**
+     * @param {Object} reqOrData
+     * @returns {LoginRequestDTO}
+     */
+    static fromRequest(reqOrData) {
+        return new LoginRequestDTO(reqOrData).validate();
+    }
+
+    /**
      * @returns {LoginRequestDTO}
      */
     validate() {
@@ -175,12 +192,101 @@ export class LoginRequestDTO {
     }
 }
 
+export class UserParamDTO {
+    /**
+     * @param {Object|string} reqOrUid
+     * @param {string} [errorMessage='O identificador (UID) do usuário é obrigatório.']
+     */
+    constructor(reqOrUid, errorMessage = 'O identificador (UID) do usuário é obrigatório.') {
+        const rawUid = typeof reqOrUid === 'string'
+            ? reqOrUid
+            : (reqOrUid?.params?.uid || reqOrUid?.params?.id || reqOrUid?.uid || reqOrUid?.id || reqOrUid?.body?.uid || reqOrUid?.query?.uid || '');
+
+        this.uid = String(rawUid || '').trim();
+        this.errorMessage = errorMessage;
+    }
+
+    /**
+     * @param {Object|string} reqOrUid
+     * @param {string} [errorMessage]
+     * @returns {UserParamDTO}
+     */
+    static fromRequest(reqOrUid, errorMessage) {
+        return new UserParamDTO(reqOrUid, errorMessage).validate();
+    }
+
+    /**
+     * @returns {UserParamDTO}
+     */
+    validate() {
+        if (!this.uid) {
+            throw new Error(this.errorMessage);
+        }
+        return this;
+    }
+}
+
+export class UserFilterQueryDTO {
+    /**
+     * @param {Object} [reqOrQuery={}]
+     * @param {string|null} [forcedRole=null]
+     */
+    constructor(reqOrQuery = {}, forcedRole = null) {
+        const query = reqOrQuery && typeof reqOrQuery === 'object' && reqOrQuery.query && typeof reqOrQuery.query === 'object'
+            ? reqOrQuery.query
+            : (reqOrQuery && typeof reqOrQuery === 'object' ? reqOrQuery : {});
+
+        const rawRole = forcedRole || (query.role !== undefined && query.role !== null && String(query.role).trim() !== '' ? query.role : null);
+        this.role = rawRole ? normalizeUserRole(rawRole) : null;
+        this.onlyActive = !(query.onlyActive === false || query.onlyActive === 'false' || query.onlyActive === '0');
+    }
+
+    /**
+     * @param {Object} [reqOrQuery={}]
+     * @param {string|null} [forcedRole=null]
+     * @returns {UserFilterQueryDTO}
+     */
+    static fromRequest(reqOrQuery = {}, forcedRole = null) {
+        return new UserFilterQueryDTO(reqOrQuery, forcedRole).validate();
+    }
+
+    /**
+     * @returns {UserFilterQueryDTO}
+     */
+    validate() {
+        if (this.role) {
+            this.role = normalizeUserRole(this.role);
+        }
+        return this;
+    }
+
+    /**
+     * @returns {Object}
+     */
+    toQueryObject() {
+        return {
+            ...(this.role ? { role: this.role } : {}),
+            onlyActive: this.onlyActive
+        };
+    }
+}
+
 export class UpdateUserRequestDTO {
     /**
-     * @param {Object} data
+     * @param {Object} reqOrData
+     * @param {string|null} [explicitUid=null]
      */
-    constructor(data = {}) {
-        const payload = extractPayload(data);
+    constructor(reqOrData = {}, explicitUid = null) {
+        const payload = extractPayload(reqOrData);
+        const rawUid = explicitUid
+            || reqOrData?.params?.uid
+            || reqOrData?.params?.id
+            || reqOrData?.uid
+            || reqOrData?.id
+            || payload?.uid
+            || '';
+
+        this.uid = String(rawUid || '').trim();
         this.displayName = payload.displayName !== undefined ? String(payload.displayName).trim() : undefined;
         this.photoURL = payload.photoURL !== undefined ? String(payload.photoURL).trim() : undefined;
         this.phoneNumber = payload.phoneNumber !== undefined ? String(payload.phoneNumber).trim() : undefined;
@@ -188,15 +294,53 @@ export class UpdateUserRequestDTO {
     }
 
     /**
+     * @param {Object} reqOrData
+     * @param {string|null} [explicitUid=null]
+     * @returns {UpdateUserRequestDTO}
+     */
+    static fromRequest(reqOrData, explicitUid = null) {
+        return new UpdateUserRequestDTO(reqOrData, explicitUid).validate();
+    }
+
+    /**
+     * @returns {UpdateUserRequestDTO}
+     */
+    validate() {
+        if (!this.uid) {
+            throw new Error('O identificador (UID) do usuário é obrigatório para atualização.');
+        }
+
+        if (this.phoneNumber) {
+            const cleanPhone = this.phoneNumber.replace(/[^\d+]/g, '');
+            if (cleanPhone.length < 8) {
+                throw new Error('O número de telefone informado é inválido.');
+            }
+        }
+
+        if (this.role !== undefined) {
+            this.role = normalizeUserRole(this.role);
+        }
+
+        return this;
+    }
+
+    /**
      * @returns {Object}
      */
-    toPlainObject() {
+    toUpdatePayload() {
         const update = {};
         if (this.displayName !== undefined) update.displayName = this.displayName;
         if (this.photoURL !== undefined) update.photoURL = this.photoURL;
         if (this.phoneNumber !== undefined) update.phoneNumber = this.phoneNumber;
         if (this.role !== undefined) update.role = this.role;
         return update;
+    }
+
+    /**
+     * @returns {Object}
+     */
+    toPlainObject() {
+        return this.toUpdatePayload();
     }
 }
 
@@ -214,9 +358,20 @@ export class UserResponseDTO {
         this.emailVerified = Boolean(user.emailVerified ?? user.verifiedEmail ?? false);
         this.role = role;
         this.disable = Boolean(user.disable ?? user.disabled ?? false);
-        this.permissions = ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS[USER_ROLES.NOMAD];
+        this.permissions = user.permissions || ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS[USER_ROLES.NOMAD];
         this.createdAt = user.createdAt || null;
         this.updatedAt = user.updatedAt || null;
+    }
+
+    /**
+     * @param {Object|null} entity
+     * @returns {UserResponseDTO|null}
+     */
+    static fromEntity(entity) {
+        if (!entity || typeof entity !== 'object') {
+            return null;
+        }
+        return new UserResponseDTO(entity);
     }
 
     /**
@@ -236,5 +391,65 @@ export class UserResponseDTO {
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
+    }
+}
+
+export class HttpResponseDTO {
+    /**
+     * @param {Object} [options={}]
+     * @param {boolean} [options.success=true]
+     * @param {string} [options.message]
+     * @param {*} [options.data]
+     * @param {string} [options.error]
+     */
+    constructor({ success = true, message = undefined, data = undefined, error = undefined } = {}) {
+        this.success = Boolean(success);
+        if (message !== undefined) {
+            this.message = message;
+        }
+        if (data !== undefined) {
+            this.data = data;
+        }
+        if (error !== undefined) {
+            this.error = error;
+        }
+    }
+
+    /**
+     * @param {*} [data=null]
+     * @param {string} [message]
+     * @returns {HttpResponseDTO}
+     */
+    static success(data = null, message = undefined) {
+        return new HttpResponseDTO({
+            success: true,
+            ...(message !== undefined ? { message } : {}),
+            data
+        });
+    }
+
+    /**
+     * @param {Error|string} errorOrMessage
+     * @param {*} [data]
+     * @returns {HttpResponseDTO}
+     */
+    static fail(errorOrMessage, data = undefined) {
+        const message = errorOrMessage instanceof Error
+            ? errorOrMessage.message
+            : String(errorOrMessage || 'Erro ao processar a requisição.');
+
+        return new HttpResponseDTO({
+            success: false,
+            error: message,
+            message,
+            ...(data !== undefined ? { data } : {})
+        });
+    }
+
+    /**
+     * @returns {Object}
+     */
+    toJSON() {
+        return { ...this };
     }
 }

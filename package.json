@@ -23,7 +23,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "build": "echo \"Build concluido com sucesso\"",
+    "build": "npm install",
     "test": "echo \"Testes verificados com sucesso\""
   },
   "dependencies": {
